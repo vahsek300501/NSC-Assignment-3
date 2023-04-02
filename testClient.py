@@ -3,6 +3,7 @@ from RSA import RSA
 import gmpy2
 from gmpy2 import mpz
 from hashlib import sha256
+import time
 
 rsaKeys = RSA()
 clientPublicKey , clientPrivateKey = rsaKeys.generatePublicPrivateKeys(15830291231451036113,10047854401552475231)
@@ -28,8 +29,44 @@ def registerClientPublicKeyToPKDA():
     print(serverResult.decode('utf-8'))
     s.close()
 
+def requestForKey(clientRequestID):
+    global rsaKeys, pkdaPublicKey
+    host = "127.0.0.1"
+    port = 8000
+    s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+ 
+    # connect to server on local computer
+    s.connect((host,port))
+    textInput = "REQUEST_"+clientID+"_"+clientRequestID+"_"+str(time.time())
+    s.send(textInput.encode("utf-8"))
+    receivedResponse = s.recv(6144)
+    receivedResponse = receivedResponse.decode('utf-8')
+    receivedResponseList = receivedResponse.split("_")
+
+    publicKeyClientExponent = mpz(receivedResponseList[1])
+    publicKeyClientModulus = mpz(receivedResponseList[2])
+
+    encryptedHMAC = mpz(receivedResponseList[4])
+    decryptedHMAC = rsaKeys.decrypt(encryptedHMAC,pkdaPublicKey)
+    hmacAscii = rsaKeys.convertNumberToText(decryptedHMAC)
+
+    print("Generating HMAC")
+    generatorString = str(receivedResponseList[0])+"_"+str(receivedResponseList[1])+"_"+str(receivedResponseList[2])+"_"+str(receivedResponseList[3])
+    generatedHMAC = sha256(generatorString.encode()).hexdigest()
+    print("Verifying HMAC")
+    if hmacAscii == generatedHMAC:
+        print("HMAC verifies that the message has been sent by PKDA")
+        return publicKeyClientExponent, publicKeyClientModulus
+    else:
+        print("HMAC verification failed")
+    return None, None
+    
+
 def Main():
     registerClientPublicKeyToPKDA()
+    exponent,modulus = requestForKey(clientID)
+    print(exponent)
+    print(modulus)
 
 print("Public Key client: ")
 print(clientPublicKey)

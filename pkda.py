@@ -5,6 +5,7 @@ from hashlib import sha256
 import gmpy2
 from gmpy2 import mpz
 import pdb
+
 clientPublicKeyMap = {}
 rsaKey = RSA()
 publicKey, privateKey = rsaKey.generatePublicPrivateKeys(11315021318077988822297698686245966994073231987629388711704681996437996088725429632461707272214616976409354431392925248076618696111389609344054891397490343,
@@ -16,12 +17,12 @@ def decryptMessages(cipherText):
     return rsaKey.decrypt(mpz(cipherText), privateKey)
 
 def getNewClientPublicKey(requestMessage,clientID,publicKeyExponent, publicKeyModulus,hmac):
-    global clientPublicKeyMap
+    global clientPublicKeyMap, rsaKey
+    print("[Client Public Key Registration Request] clientID: "+str(clientID))
     unsignedHMAC = decryptMessages(hmac)
     unsignedHMACAscii = rsaKey.convertNumberToText(unsignedHMAC)
     generatedHMAC = sha256((requestMessage+"_"+clientID+"_"+publicKeyExponent+"_"+publicKeyModulus).encode()).hexdigest()
-    print("Generated HMAC: "+str(generatedHMAC))
-    print("Unsigned HMAC: "+str(unsignedHMACAscii))
+    print("Verifying HMAC")
     if unsignedHMACAscii == generatedHMAC:
         print("HMAC verification is done")
         print("Client Added succesfully")
@@ -29,6 +30,22 @@ def getNewClientPublicKey(requestMessage,clientID,publicKeyExponent, publicKeyMo
         clientPublicKeyMap[clientID] = [publicKeyExponent,publicKeyModulus]
         return True
     return False
+
+def serveClientRequest(clientID,clientRequestID,timestamp):
+    # pdb.set_trace()
+    global clientPublicKeyMap, rsaKey, publicKey, privateKey
+    print("[Client Public key request] clientID: "+str(clientID)+" clientRequestedID: "+str(clientRequestID)+" timestamp: "+str(timestamp))
+    requestedPublicKeyExponent = clientPublicKeyMap[clientRequestID][0]
+    requestedPublicKeyModulus = clientPublicKeyMap[clientRequestID][1]
+
+    responseString = clientRequestID+"_"+str(requestedPublicKeyExponent)+"_"+str(requestedPublicKeyModulus)+"_"+str(timestamp)
+
+    hashedResponseString = sha256(responseString.encode('utf-8')).hexdigest()
+    integralHash = rsaKey.convertTextToNumbers(hashedResponseString)
+    encryptedHash = rsaKey.encrypt(mpz(integralHash),privateKey)
+    print(encryptedHash)
+    sendingString = str(responseString)+"_"+str(encryptedHash)
+    return sendingString
 
 def processClientRequest(clientSocket, clientAddress, mutexLock):
     global clientPublicKeyMap, publicKey, privateKey
@@ -47,8 +64,9 @@ def processClientRequest(clientSocket, clientAddress, mutexLock):
                 clientSocket.send("rejected".encode('utf-8'))
 
         
-        # if clientDataList[0] == 'REQUEST':
-        #     pass
+        if clientDataList[0] == 'REQUEST':
+            sendingString = serveClientRequest(clientDataList[1],clientDataList[2],clientDataList[3])
+            clientSocket.send(sendingString.encode('utf-8'))
 
     mutexLock.release()
 

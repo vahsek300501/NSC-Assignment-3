@@ -4,16 +4,16 @@ import gmpy2
 from gmpy2 import mpz
 from hashlib import sha256
 import time
-import secrets
+from threading import Thread
 import pdb
+import secrets
 
 rsaKeys = RSA()
-clientPublicKey , clientPrivateKey = rsaKeys.generatePublicPrivateKeys(103060327266338343317492429736872291197733584335510785579403277606918763322133,83884794256337772654104091915147011229294495322086170285763007751312952160721)
+clientPublicKey , clientPrivateKey = rsaKeys.generatePublicPrivateKeys(85809553255734121337984567446462131854492783534608490864158858150208843819531,74106102163014752691484349649710860403934207211599628367037366169409413906871)
 pkdaPublicKey = (mpz(65537), mpz(76116193208345101514389967868140081547072814053409908279442639814681461496300740445029422748676318383851399121480251774669133736818633260078826563066105570807769614913001307794763424359843678935208060885096080943604014059619123553202413276635104734808930589181325783704720570720426132205095615793784840968801))
-clientID = "client1"
+clientID = "client2"
 
 def registerClientPublicKeyToPKDA():
-    print("Registering the client to PKDA in secure manner")
     global rsaKeys, pkdaPublicKey
     host = "127.0.0.1"
     port = 8000
@@ -25,6 +25,8 @@ def registerClientPublicKeyToPKDA():
     hmac = sha256(textInput.encode()).hexdigest()
     integralHMAC = rsaKeys.convertTextToNumbers(hmac)
     signedHMAC = rsaKeys.encrypt(integralHMAC,pkdaPublicKey)
+    
+    print("Signed HMAC: "+str(signedHMAC))
 
     sendingMessage = textInput+"_"+str(signedHMAC)
     s.send(sendingMessage.encode('utf-8'))    
@@ -34,7 +36,6 @@ def registerClientPublicKeyToPKDA():
     s.close()
 
 def requestForKey(clientRequestID):
-    print("Requesting for keys of client with ID: "+clientRequestID)
     global rsaKeys, pkdaPublicKey
     host = "127.0.0.1"
     port = 8000
@@ -68,71 +69,75 @@ def requestForKey(clientRequestID):
         print()
     return None, None
 
-def communicateWithOtherClient(requestedClientID,clientExponent,clientModulus):
-    host = "127.0.0.1"
-    port = 6000
-    fd = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
- 
-    # connect to server on local computer
-    fd.connect((host,port))
-
-
-    nonce = 100
-    message = clientID+"_"+str(nonce)
-    hmac = sha256(message.encode()).hexdigest()
-    messageIntegers = rsaKeys.convertTextToNumbers(message)
-    encryptedMessage = rsaKeys.encrypt(messageIntegers,(clientExponent,clientModulus))
-    sendingInitiationMessage = str(encryptedMessage)+"_"+str(hmac)
-    fd.send(sendingInitiationMessage.encode('utf-8'))
+def serveClient(clientFileDescriptor,clientAddress):
+    message = clientFileDescriptor.recv(6144)
+    message = message.decode('utf-8')
+    initiationMessageList = message.split("_")
+    encryptedMessage = mpz(initiationMessageList[0])
+    hmac = initiationMessageList[1]
+    decryptedMessage = rsaKeys.decrypt(encryptedMessage,clientPrivateKey)
     
-    receivedMessage = fd.recv(6144)
-    encryptedNonce = mpz(receivedMessage.decode('utf-8'))
-    decryptedNonce = rsaKeys.decrypt(encryptedNonce,clientPrivateKey)
-    decryptedNonceAscii = rsaKeys.convertNumberToText(decryptedNonce)
-    receivedNonce1 = decryptedNonceAscii.split("_")[0]
-    receivedNonce2 = decryptedNonceAscii.split("_")[1]
+    decryptedMessageAscii = rsaKeys.convertNumberToText(decryptedMessage)
+    generatedHMAC = sha256(decryptedMessageAscii.encode()).hexdigest()
+
+    senderIdentifier = decryptedMessageAscii.split("_")[0]
+    senderNonce = decryptedMessageAscii.split("_")[1]
     
-    print("Verifying received nonce 1")
-    if str(receivedNonce1) == str(nonce):
-        print("Received Nonce verified")
+    if generatedHMAC != hmac:
+        print("Message has been tampered")
+        return False
+
+    print("Requesting PKDA for public key of "+str(senderIdentifier))
+    publicKeyClientExponent,publicKeyClientModulus = requestForKey(senderIdentifier)
+
+    nonce = 23
+    sendingMessageNonce = str(senderNonce)+"_"+str(nonce)
+    encryptedSendingNonce = str(rsaKeys.encrypt(rsaKeys.convertTextToNumbers(sendingMessageNonce),(publicKeyClientExponent,publicKeyClientModulus)))
+    clientFileDescriptor.send(encryptedSendingNonce.encode('utf-8'))
+
+    receivedNonce2 = clientFileDescriptor.recv(6144)
+    decryptedNonce2Ascii = rsaKeys.convertNumberToText(rsaKeys.decrypt(mpz(receivedNonce2.decode('utf-8')),clientPrivateKey))
+    print(decryptedNonce2Ascii)
+    print("Verifying Nonce")
+    if str(decryptedNonce2Ascii) == str(nonce):
+        print("Nonce Verified")
     else:
-        print("Nonce verification failed")
+        print("Nonce not verified")
         return
-    
-    print("Final Handshake message: sending N2 encrypted by public key of client2")
-    encryptedReceivedNonce2 = str(rsaKeys.encrypt(mpz(rsaKeys.convertTextToNumbers(str(receivedNonce2))),(clientExponent,clientModulus)))
-    fd.send(encryptedReceivedNonce2.encode('utf-8'))
 
     print()
-    print("Authentication Complete")
-    print("Sending messages now")
+    print("Authentication Complete. Receiving messages in encrypted mannar")
     print()
     print()
-
     while(True):
-        print("Enter the message to send to other client")
-        tmp = input()
-        sendingMessage = str(rsaKeys.encrypt(mpz(rsaKeys.convertTextToNumbers(tmp)),(clientExponent,clientModulus)))
-        fd.send(sendingMessage.encode('utf-8'))
-        print()
-        receivedMessage = fd.recv(6144)
+        receivedMessage = clientFileDescriptor.recv(6144)
         receivedMessage = receivedMessage.decode('utf-8')
-        print("Encrypted Received Message")
-        print(receivedMessage)
-        print()
-        print("Decrypted Message")
+        print("Encrypted Message: "+str(receivedMessage))
         decryptedMessage = rsaKeys.convertNumberToText(rsaKeys.decrypt(mpz(receivedMessage),clientPrivateKey))
-        print(str(decryptedMessage))
+        print("Message in plain text: "+str(decryptedMessage))
+        print()
+        print("Enter a message to send to client")
+        tmp = input()
+        sendingMessage = str(rsaKeys.encrypt(mpz(rsaKeys.convertTextToNumbers(tmp)),(publicKeyClientExponent,publicKeyClientModulus)))
+        clientFileDescriptor.send(sendingMessage.encode('utf-8'))
 
 def Main():
     registerClientPublicKeyToPKDA()
-    exponent,modulus = requestForKey("client2")
-    print(exponent)
-    print(modulus)
-    print()
-    print()
-    communicateWithOtherClient('client2',exponent,modulus)
+    
+    host = ""
+    port = 6000
+    
+    # Creating a socket
+    clientSocket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+    # Binding to host and port
+    clientSocket.bind((host,port))
+    # Listening to client in parallel
+    clientSocket.listen(10)
 
+    while(True):
+        clientFileDecriptor, clientAddress = clientSocket.accept() 
+        newClientThread = Thread(target=serveClient, args = [clientFileDecriptor,clientAddress])
+        newClientThread.start()
 print("Public Key client: ")
 print(clientPublicKey)
 print()
