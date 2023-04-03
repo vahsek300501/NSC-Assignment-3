@@ -1,6 +1,7 @@
 import gmpy2
 from gmpy2 import mpz
 from copy import deepcopy
+import math
 
 class RSA:
     def generatePublicPrivateKeys(self,p,q):
@@ -26,6 +27,27 @@ class RSA:
         privateKey = (d,n)
         return publicKey, privateKey
     
+    def generatePublicPrivateKeysUtil(self,p,q):
+        n = gmpy2.mul(p,q)
+        phi_n = gmpy2.mul(gmpy2.sub(p,1),gmpy2.sub(q,1))
+
+        e = 2
+        while(True):
+            if math.gcd(e,phi_n) == 1:
+                break
+            e += 1
+        
+        publicKey = (e,n)
+
+        d = 2
+        while(True):
+            if ((d*e)%phi_n)  == 1:
+                break
+            d += 1
+        
+        privateKey = (d,n)
+        return publicKey, privateKey
+
     def convertTextToNumbers(self,text):
         finalText = ""
         for letter in text:
