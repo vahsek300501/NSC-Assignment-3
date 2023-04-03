@@ -43,7 +43,6 @@ def serveClientRequest(clientID,clientRequestID,timestamp):
     hashedResponseString = sha256(responseString.encode('utf-8')).hexdigest()
     integralHash = rsaKey.convertTextToNumbers(hashedResponseString)
     encryptedHash = rsaKey.encrypt(mpz(integralHash),privateKey)
-    print(encryptedHash)
     sendingString = str(responseString)+"_"+str(encryptedHash)
     return sendingString
 

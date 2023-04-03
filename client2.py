@@ -1,12 +1,10 @@
 import socket
 from RSA import RSA
-import gmpy2
 from gmpy2 import mpz
 from hashlib import sha256
 import time
 from threading import Thread
-import pdb
-import secrets
+import random 
 
 rsaKeys = RSA()
 clientPublicKey , clientPrivateKey = rsaKeys.generatePublicPrivateKeys(85809553255734121337984567446462131854492783534608490864158858150208843819531,74106102163014752691484349649710860403934207211599628367037366169409413906871)
@@ -15,6 +13,7 @@ clientID = "client2"
 
 def registerClientPublicKeyToPKDA():
     global rsaKeys, pkdaPublicKey
+    print("Registering public key with PKDA in secure Mannar")
     host = "127.0.0.1"
     port = 8000
     s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
@@ -25,24 +24,21 @@ def registerClientPublicKeyToPKDA():
     hmac = sha256(textInput.encode()).hexdigest()
     integralHMAC = rsaKeys.convertTextToNumbers(hmac)
     signedHMAC = rsaKeys.encrypt(integralHMAC,pkdaPublicKey)
-    
-    print("Signed HMAC: "+str(signedHMAC))
 
     sendingMessage = textInput+"_"+str(signedHMAC)
     s.send(sendingMessage.encode('utf-8'))    
     serverResult = s.recv(1024)
-    print(serverResult.decode('utf-8'))
+    print("PKDA Response: "+str(serverResult.decode('utf-8')))
     print()
     s.close()
 
-def requestForKey(clientRequestID):
+def requestForKey(clientRequestID,messageNumber):
     global rsaKeys, pkdaPublicKey
     host = "127.0.0.1"
     port = 8000
     s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
- 
-    # connect to server on local computer
     s.connect((host,port))
+
     textInput = "REQUEST_"+clientID+"_"+clientRequestID+"_"+str(time.time())
     s.send(textInput.encode("utf-8"))
     receivedResponse = s.recv(6144)
@@ -56,20 +52,22 @@ def requestForKey(clientRequestID):
     decryptedHMAC = rsaKeys.decrypt(encryptedHMAC,pkdaPublicKey)
     hmacAscii = rsaKeys.convertNumberToText(decryptedHMAC)
 
-    print("Generating HMAC")
+    print("["+messageNumber+"] Generating HMAC")
     generatorString = str(receivedResponseList[0])+"_"+str(receivedResponseList[1])+"_"+str(receivedResponseList[2])+"_"+str(receivedResponseList[3])
     generatedHMAC = sha256(generatorString.encode()).hexdigest()
-    print("Verifying HMAC")
+    print("["+messageNumber+"] Verifying HMAC")
     if hmacAscii == generatedHMAC:
-        print("HMAC verifies that the message has been sent by PKDA")
-        print()
+        print("["+messageNumber+"] HMAC verifies that the message has been sent by PKDA")
         return publicKeyClientExponent, publicKeyClientModulus
     else:
-        print("HMAC verification failed")
-        print()
+        print("["+messageNumber+"] HMAC verification failed")
     return None, None
 
 def serveClient(clientFileDescriptor,clientAddress):
+    print("Connection Received from: "+str(clientAddress))
+    print()
+    print("[Message-1] Connection initiation handshake from client")
+
     message = clientFileDescriptor.recv(6144)
     message = message.decode('utf-8')
     initiationMessageList = message.split("_")
@@ -82,44 +80,66 @@ def serveClient(clientFileDescriptor,clientAddress):
 
     senderIdentifier = decryptedMessageAscii.split("_")[0]
     senderNonce = decryptedMessageAscii.split("_")[1]
+    print("[Message-1] Sender Identification: "+str(senderIdentifier))
+    print("[Message-1] Verifying message integrity from sender")
+    if generatedHMAC == hmac:
+        print("[Message-1] HMAC verified")
     
-    if generatedHMAC != hmac:
-        print("Message has been tampered")
+    elif generatedHMAC != hmac:
+        print("[Message-1] Message has been tampered")
         return False
 
-    print("Requesting PKDA for public key of "+str(senderIdentifier))
-    publicKeyClientExponent,publicKeyClientModulus = requestForKey(senderIdentifier)
+    print()
+    print("[Message-2] Requesting PKDA for public key of "+str(senderIdentifier))
+    publicKeyClientExponent,publicKeyClientModulus = requestForKey(senderIdentifier,"Message-2")
+    print()
 
-    nonce = 23
+    print("[Message-3] Sending N1||N2 encrypted with public key of "+senderIdentifier)
+    nonce = random.randint(1,100)
     sendingMessageNonce = str(senderNonce)+"_"+str(nonce)
     encryptedSendingNonce = str(rsaKeys.encrypt(rsaKeys.convertTextToNumbers(sendingMessageNonce),(publicKeyClientExponent,publicKeyClientModulus)))
     clientFileDescriptor.send(encryptedSendingNonce.encode('utf-8'))
+    print()
 
+    print("[Message-4] Receiving encrypted N2")
     receivedNonce2 = clientFileDescriptor.recv(6144)
     decryptedNonce2Ascii = rsaKeys.convertNumberToText(rsaKeys.decrypt(mpz(receivedNonce2.decode('utf-8')),clientPrivateKey))
-    print(decryptedNonce2Ascii)
-    print("Verifying Nonce")
+    print("[Message-4] Verifying Nonce")
     if str(decryptedNonce2Ascii) == str(nonce):
-        print("Nonce Verified")
+        print("[Message-4] Nonce Verified")
     else:
-        print("Nonce not verified")
+        print("[Message-4] Nonce not verified")
         return
 
     print()
-    print("Authentication Complete. Receiving messages in encrypted mannar")
+    print("Authentication Complete with "+senderIdentifier+". We can send and receive message in encrypted manner")
     print()
-    print()
+
     while(True):
+
+        print("Receiving Encrypted Message")
         receivedMessage = clientFileDescriptor.recv(6144)
         receivedMessage = receivedMessage.decode('utf-8')
+        receivedMessageHMAC = receivedMessage.split("_")[1]
+        receivedMessage = receivedMessage.split("_")[0]
         print("Encrypted Message: "+str(receivedMessage))
         decryptedMessage = rsaKeys.convertNumberToText(rsaKeys.decrypt(mpz(receivedMessage),clientPrivateKey))
-        print("Message in plain text: "+str(decryptedMessage))
+        print("Verifying HMAC")
+        if sha256(decryptedMessage.encode()).hexdigest() == receivedMessageHMAC:
+            print("HMAC Verified for the message")
+            print("Message in plain text: "+str(decryptedMessage))
+        else:
+            print("HMAC verification failed")
+            print("Message has been tampered with")
         print()
-        print("Enter a message to send to client")
+
+        print("Enter a message to send to "+senderIdentifier)
         tmp = input()
+        sendingMessageHMAC = sha256(tmp.encode()).hexdigest()
         sendingMessage = str(rsaKeys.encrypt(mpz(rsaKeys.convertTextToNumbers(tmp)),(publicKeyClientExponent,publicKeyClientModulus)))
+        sendingMessage = sendingMessage + "_" + sendingMessageHMAC
         clientFileDescriptor.send(sendingMessage.encode('utf-8'))
+        print()
 
 def Main():
     registerClientPublicKeyToPKDA()
@@ -127,6 +147,7 @@ def Main():
     host = ""
     port = 6000
     
+    print("Client2 started at port: "+str(port))
     # Creating a socket
     clientSocket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
     # Binding to host and port
@@ -135,13 +156,8 @@ def Main():
     clientSocket.listen(10)
 
     while(True):
+        print("Listening for incomming connections")
         clientFileDecriptor, clientAddress = clientSocket.accept() 
         newClientThread = Thread(target=serveClient, args = [clientFileDecriptor,clientAddress])
         newClientThread.start()
-print("Public Key client: ")
-print(clientPublicKey)
-print()
-print()
-print("Private Key client: ")
-print(clientPrivateKey)
 Main()
