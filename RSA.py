@@ -7,8 +7,6 @@ class RSA:
     def generatePublicPrivateKeys(self,p,q):
         n = gmpy2.mul(p,q)
         phi_n = gmpy2.mul(gmpy2.sub(p,1),gmpy2.sub(q,1))
-        # print(n)
-        # print(phi_n)
         fermatList = [mpz(65537),mpz(257),mpz(17),mpz(5),mpz(3)]
         e = None
         d = None
