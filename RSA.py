@@ -58,15 +58,3 @@ class RSA:
         exponent = key[0]
         modulus = key[1]
         return gmpy2.powmod(cipherText,exponent,modulus)
-
-
-# myRSA = RSA()
-# input = '100_25'
-# integralInput = myRSA.convertTextToNumbers(input)
-# publicKey, privateKey = clientPublicKey , clientPrivateKey = myRSA.generatePublicPrivateKeys(103060327266338343317492429736872291197733584335510785579403277606918763322133,83884794256337772654104091915147011229294495322086170285763007751312952160721)
-# encryptedText = myRSA.encrypt(integralInput,publicKey)
-# print(encryptedText)
-# decryptedNumber = myRSA.decrypt(encryptedText,privateKey)
-# print(decryptedNumber)
-
-# print(myRSA.convertNumberToText(decryptedNumber))

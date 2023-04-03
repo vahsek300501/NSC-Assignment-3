@@ -2,9 +2,7 @@ import socket
 from RSA import RSA
 from threading import Thread, Lock
 from hashlib import sha256
-import gmpy2
 from gmpy2 import mpz
-import pdb
 
 clientPublicKeyMap = {}
 rsaKey = RSA()
@@ -82,12 +80,8 @@ def Main():
     # Listening to client in parallel
     serverSocket.listen(10)
 
-    
-
     while(True):
-        
         clientSocket, clientAddress = serverSocket.accept()
-        print(clientAddress)
         newClientThread = Thread(target=processClientRequest,args=[clientSocket,clientAddress,mutexLock])
         newClientThread.start()
 
