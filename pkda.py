@@ -30,7 +30,6 @@ def getNewClientPublicKey(requestMessage,clientID,publicKeyExponent, publicKeyMo
     return False
 
 def serveClientRequest(clientID,clientRequestID,timestamp):
-    # pdb.set_trace()
     global clientPublicKeyMap, rsaKey, publicKey, privateKey
     print("[Client Public key request] clientID: "+str(clientID)+" clientRequestedID: "+str(clientRequestID)+" timestamp: "+str(timestamp))
     requestedPublicKeyExponent = clientPublicKeyMap[clientRequestID][0]
